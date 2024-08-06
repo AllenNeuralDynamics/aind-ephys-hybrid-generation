@@ -46,7 +46,7 @@ if __name__ == "__main__":
     recordings_output_folder = results_folder / "recordings"
     sortings_output_folder = results_folder / "sortings"
     figure_output_folder = results_folder / "figures"
-    templates_figures_folder = figure_output_folder / "motion"
+    templates_figures_folder = figure_output_folder / "templates"
     
     recordings_output_folder.mkdir(exist_ok=True)
     sortings_output_folder.mkdir(exist_ok=True)
@@ -164,7 +164,7 @@ if __name__ == "__main__":
                     "recording_name": case_name,
                     "recording_dict": recording_dict
                 }
-                file_path = recordings_output_folder / f"{case_name}.pkl"
+                file_path = recordings_output_folder / f"job_{case_name}.pkl"
                 file_path.write_bytes(pickle.dumps(dump_dict))
 
                 sorting_hybrid.dump_to_pickle(
