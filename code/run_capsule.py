@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description="Generate hybrid datasets")
 
 complexity_group = parser.add_mutually_exclusive_group()
 complexity_help = "Complexity of the hybrid cases. Can be a string with a single case, or comma-separated (e.g., 'easy,hard')"
-complexity_group.add_argument("--complexity", default="medium", help=complexity_help)
+complexity_group.add_argument("--complexity", help=complexity_help)
 complexity_group.add_argument("static_complexity", nargs="?", default="medium", help=complexity_help)
 
 num_units_group = parser.add_mutually_exclusive_group()
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     with open("params.json", "r") as f:
         params = json.load(f)
 
-    COMPLEXITY = args.complexity or args.complexity
+    COMPLEXITY = args.complexity or args.static_complexity
     COMPLEXITY = COMPLEXITY.split(",")
     if isinstance(COMPLEXITY, str):
         COMPLEXITY = [COMPLEXITY]
