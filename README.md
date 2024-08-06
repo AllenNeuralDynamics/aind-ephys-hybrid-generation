@@ -1,3 +1,3 @@
-# aind-capsule-template
+# aind-ephys-hybrid-generation
 
-Basic structure of a capsule to be customized as needed.
+Generate hybrid datasets from existing recordings

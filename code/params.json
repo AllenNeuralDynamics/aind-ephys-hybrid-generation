@@ -1,0 +1,11 @@
+{
+    "amplitudes":
+    {
+        "easy": [200, 400],
+        "medium": [100, 200],
+        "hard": [30, 100]
+    },
+    "num_units_per_case": 10,
+    "num_cases": 5,
+    "correct_motion": false
+}
