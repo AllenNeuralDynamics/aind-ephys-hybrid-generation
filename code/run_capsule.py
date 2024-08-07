@@ -142,7 +142,7 @@ if __name__ == "__main__":
                     max_amplitude=max_amplitude
                 )
 
-                print(f"\t\t\tConstructing hycrid recording")
+                print(f"\t\t\tConstructing hybrid recording")
                 recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
                     recording=recording_preproc,
                     templates=templates_scaled,
@@ -150,6 +150,9 @@ if __name__ == "__main__":
                     seed=None,
                 )
                 print(recording_hybrid)
+
+                # rename hybrid units with selected indices for provenance
+                sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
                 # we construct here a pkl version of the job json because 
                 # it needs to be compatible with the preprocessing capsule
