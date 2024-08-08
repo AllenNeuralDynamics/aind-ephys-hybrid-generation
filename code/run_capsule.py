@@ -87,6 +87,9 @@ if __name__ == "__main__":
     print(f"Found {len(job_dicts)} JSON job files")
 
     templates_info = sgen.fetch_templates_database_info()
+
+    # TODO: check this at database creation!
+    templates_info = templates_info.query("amplitude_uv > 0")
     
     # for each JSON file, we now create hybrid recordings
     for job_dict in job_dicts:
