@@ -38,7 +38,10 @@ correct_motion_help = "Whether to concatenate recordings (segments) or not. Defa
 correct_motion_group.add_argument("--skip-correct-motion", action="store_true", help=correct_motion_help)
 correct_motion_group.add_argument("static_correct_motion", nargs="?", help=correct_motion_help)
 
-
+debug_group = parser.add_mutually_exclusive_group()
+debug_help = "Whether to run in DEBUG mode"
+debug_group.add_argument("--debug", action="store_true", help=debug_help)
+debug_group.add_argument("static_debug", nargs="?", default="false", help=debug_help)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -63,6 +66,8 @@ if __name__ == "__main__":
 
     NUM_UNITS = int(args.num_units or args.static_num_units or params["num_units_per_case"])
     NUM_CASES = int(args.num_cases or args.static_num_cases or params["num_cases"])
+    DEBUG = args.debug or args.static_debug == "true"
+
 
     if args.skip_correct_motion:
         CORRECT_MOTION = False
@@ -85,6 +90,9 @@ if __name__ == "__main__":
             job_dict = json.load(f)
         job_dicts.append(job_dict)
     print(f"Found {len(job_dicts)} JSON job files")
+    if DEBUG:
+        job_dicts = job_dicts[:2]
+        print(f"DEBUG MODE: restricted to {len(job_dicts)} JSON job files")
 
     templates_info = sgen.fetch_templates_database_info()
 
