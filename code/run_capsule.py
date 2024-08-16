@@ -1,4 +1,11 @@
 """ top level run script """
+# GENERAL IMPORTS
+import os
+
+# this is needed to limit the number of scipy threads
+# and let spikeinterface handle parallelization
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 import argparse
 import json
 import pickle
