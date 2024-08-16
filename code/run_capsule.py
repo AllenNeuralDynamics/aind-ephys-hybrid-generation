@@ -120,11 +120,13 @@ if __name__ == "__main__":
         motion = None
         if CORRECT_MOTION:
             print("Estimating motion")
+            motion_base_folder = results_folder / "motion"
+            motion_base_folder.mkdir(exist_ok=True)
             motion_figures_folder = figure_output_folder / "motion"
             motion_figures_folder.mkdir(exist_ok=True)
             
             _, motion_info = spre.correct_motion(
-                recording_preproc, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True
+                recording_preproc, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_base_folder / recording_name
             )
             motion = motion_info["motion"]
             w = sw.plot_motion_info(
@@ -134,7 +136,7 @@ if __name__ == "__main__":
                 scatter_decimate=10,
                 amplitude_cmap="Greys_r"
             )
-            w.figure.savefig(motion_figures_folder / f"recording_name.png", dpi=300)
+            w.figure.savefig(motion_figures_folder / f"{recording_name}.png", dpi=300)
 
         for complexity in COMPLEXITY:
             print(f"\tGenerating complexity: {complexity}")
