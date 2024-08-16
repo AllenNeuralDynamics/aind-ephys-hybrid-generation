@@ -124,7 +124,7 @@ if __name__ == "__main__":
             motion_figures_folder.mkdir(exist_ok=True)
             
             _, motion_info = spre.correct_motion(
-                recording_preproc, preset="dredge_fast", n_jobs=-1, progress_bar=True, output_motion_info=True
+                recording_preproc, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True
             )
             motion = motion_info["motion"]
             w = sw.plot_motion_info(
