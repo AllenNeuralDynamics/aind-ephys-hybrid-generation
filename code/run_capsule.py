@@ -124,9 +124,10 @@ if __name__ == "__main__":
             motion_base_folder.mkdir(exist_ok=True)
             motion_figures_folder = figure_output_folder / "motion"
             motion_figures_folder.mkdir(exist_ok=True)
-            
+
+            recording_preproc_f = spre.astype(recording_preproc, "float")
             _, motion_info = spre.correct_motion(
-                recording_preproc, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_base_folder / recording_name
+                recording_preproc_f, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_base_folder / recording_name
             )
             motion = motion_info["motion"]
             w = sw.plot_motion_info(
