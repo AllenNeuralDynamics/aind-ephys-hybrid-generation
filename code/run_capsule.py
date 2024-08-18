@@ -113,6 +113,11 @@ if __name__ == "__main__":
         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
         print(f"\t{recording}")
 
+        # skip times if non-monotonically increasing
+        if job_dict["skip_times"]:
+            for rs in recording._recording_segments:
+                rs.time_vector = None
+
         # preprocess
         recording_preproc = spre.highpass_filter(recording)
         recording_preproc = spre.common_reference(recording_preproc)
