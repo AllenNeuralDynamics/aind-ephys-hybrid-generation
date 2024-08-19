@@ -50,6 +50,13 @@ debug_help = "Whether to run in DEBUG mode"
 debug_group.add_argument("--debug", action="store_true", help=debug_help)
 debug_group.add_argument("static_debug", nargs="?", default="false", help=debug_help)
 
+debug_duration_group = parser.add_mutually_exclusive_group()
+debug_duration_help = (
+    "Duration of clipped recording in debug mode. Default is 30 seconds. Only used if debug is enabled"
+)
+debug_duration_group.add_argument("--debug-duration", default=30, help=debug_duration_help)
+debug_duration_group.add_argument("static_debug_duration", nargs="?", default=None, help=debug_duration_help)
+
 if __name__ == "__main__":
     args = parser.parse_args()
 
@@ -74,6 +81,7 @@ if __name__ == "__main__":
     NUM_UNITS = int(args.num_units or args.static_num_units or params["num_units_per_case"])
     NUM_CASES = int(args.num_cases or args.static_num_cases or params["num_cases"])
     DEBUG = args.debug or args.static_debug == "true"
+    DEBUG_DURATION = float(args.static_debug_duration or args.debug_duration)
 
 
     if args.skip_correct_motion:
@@ -99,7 +107,7 @@ if __name__ == "__main__":
     print(f"Found {len(job_dicts)} JSON job files")
     if DEBUG:
         job_dicts = job_dicts[:2]
-        print(f"DEBUG MODE: restricted to {len(job_dicts)} JSON job files")
+        print(f"DEBUG MODE: restricted to {len(job_dicts)} JSON job files. Duration clipped to {DEBUG_DURATION} seconds")
 
     templates_info = sgen.fetch_templates_database_info()
 
@@ -109,14 +117,25 @@ if __name__ == "__main__":
     # for each JSON file, we now create hybrid recordings
     for job_dict in job_dicts:
         recording_name = job_dict["recording_name"]
-        print(f"Creating hybrid recordings for {recording_name}")
+        print(f"\n\nCreating hybrid recordings for {recording_name}")
         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
-        print(f"\t{recording}")
 
+        if DEBUG:
+            recording_list = []
+            for segment_index in range(recording.get_num_segments()):
+                recording_one = si.split_recording(recording)[segment_index]
+                recording_one = recording_one.frame_slice(
+                    start_frame=0, end_frame=int(DEBUG_DURATION * recording.sampling_frequency)
+                )
+                recording_list.append(recording_one)
+            recording = si.append_recordings(recording_list)
+            
         # skip times if non-monotonically increasing
         if job_dict["skip_times"]:
             for rs in recording._recording_segments:
                 rs.time_vector = None
+                rs.sampling_frequency = recording.sampling_frequency
+        print(recording)
 
         # preprocess
         recording_preproc = spre.highpass_filter(recording)
@@ -124,7 +143,7 @@ if __name__ == "__main__":
 
         motion = None
         if CORRECT_MOTION:
-            print("Estimating motion")
+            print("\tEstimating motion")
             motion_base_folder = results_folder / "motion"
             motion_base_folder.mkdir(exist_ok=True)
             motion_figures_folder = figure_output_folder / "motion"
@@ -167,6 +186,11 @@ if __name__ == "__main__":
                     min_amplitude=min_amplitude,
                     max_amplitude=max_amplitude
                 )
+                amplitudes = np.zeros(templates_scaled.num_units)
+                extremum_channel_indices = list(si.get_template_extremum_channel(templates_scaled, outputs="index").values())
+                for i in range(templates_scaled.num_units):
+                    amplitudes[i] = np.ptp(templates_scaled.templates_array[i, :, extremum_channel_indices[i]])
+                print(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
 
                 print(f"\t\t\tConstructing hybrid recording")
                 recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
@@ -175,7 +199,7 @@ if __name__ == "__main__":
                     motion=motion,
                     seed=None,
                 )
-                print(recording_hybrid)
+                print(f"\t\t\t{recording_hybrid}")
 
                 # rename hybrid units with selected indices for provenance
                 sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
@@ -191,8 +215,10 @@ if __name__ == "__main__":
                 dump_dict = {
                     "session_name": job_dict["session_name"],
                     "recording_name": case_name,
-                    "recording_dict": recording_dict
+                    "recording_dict": recording_dict,
+                    "template_indices": templates_selected_indices
                 }
+                dump_dict["skip_times"] = job_dict["skip_times"]
                 file_path = recordings_output_folder / f"job_{case_name}.pkl"
                 file_path.write_bytes(pickle.dumps(dump_dict))
 
@@ -202,8 +228,12 @@ if __name__ == "__main__":
                 )
 
                 # generate some plots!
+                if CORRECT_MOTION:
+                    templates_array = recording_hybrid.drifting_templates.templates_array
+                else:
+                    templates_array = recording_hybrid.templates
                 templates_obj = si.Templates(
-                    recording_hybrid.templates,
+                    templates_array * recording.get_channel_gains()[0],
                     channel_ids=templates_selected.channel_ids,
                     unit_ids=sorting_hybrid.unit_ids,
                     probe=recording.get_probe(), 
@@ -218,5 +248,6 @@ if __name__ == "__main__":
                     sparsity=sparsity,
                     figsize=figsize,
                     ncols=2,
+                    scalebar=True
                 )
                 w.figure.savefig(templates_figures_folder / f"{case_name}.pdf")
