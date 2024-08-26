@@ -60,16 +60,6 @@ debug_duration_group.add_argument("static_debug_duration", nargs="?", default=No
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    recordings_output_folder = results_folder / "recordings"
-    sortings_output_folder = results_folder / "sortings"
-    figure_output_folder = results_folder / "figures"
-    templates_figures_folder = figure_output_folder / "templates"
-    
-    recordings_output_folder.mkdir(exist_ok=True)
-    sortings_output_folder.mkdir(exist_ok=True)
-    figure_output_folder.mkdir(exist_ok=True)
-    templates_figures_folder.mkdir(exist_ok=True)
-
     with open("params.json", "r") as f:
         params = json.load(f)
 
@@ -95,6 +85,13 @@ if __name__ == "__main__":
     print(f"NUM_UNITS: {NUM_UNITS}")
     print(f"NUM_CASES: {NUM_CASES}")
     print(f"CORRECT_MOTION: {CORRECT_MOTION}")
+
+    # this folder is used for parallelization
+    recordings_folder = results_folder / "recordings"
+    recordings_folder.mkdir(exist_ok=True)
+    # this folder is used to collect the output
+    flattened_folder = results_folder / "flattened"
+    flattened_folder.mkdir(exist_ok=True)
 
     # input json files
     # find raw data
@@ -144,14 +141,12 @@ if __name__ == "__main__":
         motion = None
         if CORRECT_MOTION:
             print("\tEstimating motion")
-            motion_base_folder = results_folder / "motion"
-            motion_base_folder.mkdir(exist_ok=True)
-            motion_figures_folder = figure_output_folder / "motion"
-            motion_figures_folder.mkdir(exist_ok=True)
+            motion_folder = flattened_folder / f"motion_{recording_name}"
+            motion_figure_file = flattened_folder / f"fig-motion_{recording_name}.png"
 
             recording_preproc_f = spre.astype(recording_preproc, "float")
             _, motion_info = spre.correct_motion(
-                recording_preproc_f, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_base_folder / recording_name
+                recording_preproc_f, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_folder
             )
             motion = motion_info["motion"]
             w = sw.plot_motion_info(
@@ -161,7 +156,7 @@ if __name__ == "__main__":
                 scatter_decimate=10,
                 amplitude_cmap="Greys_r"
             )
-            w.figure.savefig(motion_figures_folder / f"{recording_name}.png", dpi=300)
+            w.figure.savefig(motion_figure_file, dpi=300)
 
         for complexity in COMPLEXITY:
             print(f"\tGenerating complexity: {complexity}")
@@ -219,11 +214,15 @@ if __name__ == "__main__":
                     "template_indices": templates_selected_indices
                 }
                 dump_dict["skip_times"] = job_dict["skip_times"]
-                file_path = recordings_output_folder / f"job_{case_name}.pkl"
-                file_path.write_bytes(pickle.dumps(dump_dict))
+                recording_file_path = recordings_folder / f"job_{case_name}.pkl"
+                recording_file_path.write_bytes(pickle.dumps(dump_dict))
+                flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
+                flattened_file_path.write_bytes(pickle.dumps(dump_dict))
+
+                # TODO: also save to recordings + flatten folder to parallelize
 
                 sorting_hybrid.dump_to_pickle(
-                    sortings_output_folder / f"{case_name}.pkl",
+                    flattened_folder / f"gt_{case_name}.pkl",
                     relative_to=data_folder
                 )
 
@@ -250,4 +249,5 @@ if __name__ == "__main__":
                     ncols=2,
                     scalebar=True
                 )
-                w.figure.savefig(templates_figures_folder / f"{case_name}.pdf")
+                
+                w.figure.savefig(flattened_folder / f"fig-templates_{case_name}.pdf")
