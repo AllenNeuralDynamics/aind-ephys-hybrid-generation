@@ -25,18 +25,13 @@ results_folder = Path("../results")
 # Define argument parser
 parser = argparse.ArgumentParser(description="Generate hybrid datasets")
 
-complexity_group = parser.add_mutually_exclusive_group()
-complexity_help = "Complexity of the hybrid cases. Can be a string with a single case, or comma-separated (e.g., 'easy,hard')"
-complexity_group.add_argument("--complexity", help=complexity_help)
-complexity_group.add_argument("static_complexity", nargs="?", default="medium", help=complexity_help)
-
 num_units_group = parser.add_mutually_exclusive_group()
 num_units_help = "Number of hybrid units for each case"
 num_units_group.add_argument("--num-units", help=num_units_help)
 num_units_group.add_argument("static_num_units", nargs="?", help=num_units_help)
 
 num_cases_group = parser.add_mutually_exclusive_group()
-num_cases_help = "Number of cases for each complexity"
+num_cases_help = "Number of cases for each recording"
 num_cases_group.add_argument("--num-cases", help=num_cases_help)
 num_cases_group.add_argument("static_num_cases", nargs="?", help=num_cases_help)
 
@@ -63,11 +58,6 @@ if __name__ == "__main__":
     with open("params.json", "r") as f:
         params = json.load(f)
 
-    COMPLEXITY = args.complexity or args.static_complexity
-    COMPLEXITY = COMPLEXITY.split(",")
-    if isinstance(COMPLEXITY, str):
-        COMPLEXITY = [COMPLEXITY]
-
     NUM_UNITS = int(args.num_units or args.static_num_units or params["num_units_per_case"])
     NUM_CASES = int(args.num_cases or args.static_num_cases or params["num_cases"])
     DEBUG = args.debug or args.static_debug == "true"
@@ -81,7 +71,6 @@ if __name__ == "__main__":
     else:
         CORRECT_MOTION = params["correct_motion"]
 
-    print(f"COMPLEXITY: {COMPLEXITY}")
     print(f"NUM_UNITS: {NUM_UNITS}")
     print(f"NUM_CASES: {NUM_CASES}")
     print(f"CORRECT_MOTION: {CORRECT_MOTION}")
@@ -129,9 +118,7 @@ if __name__ == "__main__":
             
         # skip times if non-monotonically increasing
         if job_dict["skip_times"]:
-            for rs in recording._recording_segments:
-                rs.time_vector = None
-                rs.sampling_frequency = recording.sampling_frequency
+            recording.reset_times()
         print(recording)
 
         # preprocess
@@ -158,96 +145,95 @@ if __name__ == "__main__":
             )
             w.figure.savefig(motion_figure_file, dpi=300)
 
-        for complexity in COMPLEXITY:
-            print(f"\tGenerating complexity: {complexity}")
-            min_amplitude, max_amplitude = params["amplitudes"][complexity]
-            for case in range(NUM_CASES):
-                print(f"\t\tGenerating case: {case}")
-                case_name = f"{recording_name}_{complexity}_{case}"
+        print(f"\tGenerating hybrid recordings")
+        min_amplitude, max_amplitude = params["amplitudes"]
+        for case in range(NUM_CASES):
+            print(f"\t\tGenerating case: {case}")
+            case_name = f"{recording_name}_{case}"
 
-                # sample templates
-                print(f"\t\t\tSelecting and fetching templates")
-                templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
-                print(f"\t\t\tSelected indices: {list(templates_selected_indices)}")
-                templates_selected_info = templates_info.loc[templates_selected_indices]
+            # sample templates
+            print(f"\t\t\tSelecting and fetching templates")
+            templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
+            print(f"\t\t\tSelected indices: {list(templates_selected_indices)}")
+            templates_selected_info = templates_info.loc[templates_selected_indices]
 
-                # fetch templates
-                templates_selected = sgen.query_templates_from_database(templates_selected_info)
+            # fetch templates
+            templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
-                # scale templates
-                print(f"\t\t\tScaling templates between {min_amplitude} and {max_amplitude}")
-                templates_scaled = sgen.scale_template_to_range(
-                    templates=templates_selected,
-                    min_amplitude=min_amplitude,
-                    max_amplitude=max_amplitude
-                )
-                amplitudes = np.zeros(templates_scaled.num_units)
-                extremum_channel_indices = list(si.get_template_extremum_channel(templates_scaled, outputs="index").values())
-                for i in range(templates_scaled.num_units):
-                    amplitudes[i] = np.ptp(templates_scaled.templates_array[i, :, extremum_channel_indices[i]])
-                print(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
+            # scale templates
+            print(f"\t\t\tScaling templates between {min_amplitude} and {max_amplitude}")
+            templates_scaled = sgen.scale_template_to_range(
+                templates=templates_selected,
+                min_amplitude=min_amplitude,
+                max_amplitude=max_amplitude
+            )
+            amplitudes = np.zeros(templates_scaled.num_units)
+            extremum_channel_indices = list(si.get_template_extremum_channel(templates_scaled, outputs="index").values())
+            for i in range(templates_scaled.num_units):
+                amplitudes[i] = np.ptp(templates_scaled.templates_array[i, :, extremum_channel_indices[i]])
+            print(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
 
-                print(f"\t\t\tConstructing hybrid recording")
-                recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
-                    recording=recording_preproc,
-                    templates=templates_scaled,
-                    motion=motion,
-                    seed=None,
-                )
-                print(f"\t\t\t{recording_hybrid}")
+            print(f"\t\t\tConstructing hybrid recording")
+            recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
+                recording=recording_preproc,
+                templates=templates_scaled,
+                motion=motion,
+                seed=None,
+            )
+            print(f"\t\t\t{recording_hybrid}")
 
-                # rename hybrid units with selected indices for provenance
-                sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
+            # rename hybrid units with selected indices for provenance
+            sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
-                # we construct here a pkl version of the job json because 
-                # it needs to be compatible with the preprocessing capsule
-                recording_dict = recording_hybrid.to_dict(
-                    include_annotations=True,
-                    include_properties=True,
-                    relative_to=data_folder,
-                    recursive=True,
-                )
-                dump_dict = {
-                    "session_name": job_dict["session_name"],
-                    "recording_name": case_name,
-                    "recording_dict": recording_dict,
-                    "template_indices": templates_selected_indices
-                }
-                dump_dict["skip_times"] = job_dict["skip_times"]
-                recording_file_path = recordings_folder / f"job_{case_name}.pkl"
-                recording_file_path.write_bytes(pickle.dumps(dump_dict))
-                flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
-                flattened_file_path.write_bytes(pickle.dumps(dump_dict))
+            # we construct here a pkl version of the job json because 
+            # it needs to be compatible with the preprocessing capsule
+            recording_dict = recording_hybrid.to_dict(
+                include_annotations=True,
+                include_properties=True,
+                relative_to=data_folder,
+                recursive=True,
+            )
+            dump_dict = {
+                "session_name": job_dict["session_name"],
+                "recording_name": case_name,
+                "recording_dict": recording_dict,
+                "template_indices": templates_selected_indices
+            }
+            dump_dict["skip_times"] = job_dict["skip_times"]
+            recording_file_path = recordings_folder / f"job_{case_name}.pkl"
+            recording_file_path.write_bytes(pickle.dumps(dump_dict))
+            flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
+            flattened_file_path.write_bytes(pickle.dumps(dump_dict))
 
-                # TODO: also save to recordings + flatten folder to parallelize
+            # TODO: also save to recordings + flatten folder to parallelize
 
-                sorting_hybrid.dump_to_pickle(
-                    flattened_folder / f"gt_{case_name}.pkl",
-                    relative_to=data_folder
-                )
+            sorting_hybrid.dump_to_pickle(
+                flattened_folder / f"gt_{case_name}.pkl",
+                relative_to=data_folder
+            )
 
-                # generate some plots!
-                if CORRECT_MOTION:
-                    templates_array = recording_hybrid.drifting_templates.templates_array
-                else:
-                    templates_array = recording_hybrid.templates
-                templates_obj = si.Templates(
-                    templates_array * recording.get_channel_gains()[0],
-                    channel_ids=templates_selected.channel_ids,
-                    unit_ids=sorting_hybrid.unit_ids,
-                    probe=recording.get_probe(), 
-                    sampling_frequency=templates_selected.sampling_frequency,
-                    nbefore=templates_selected.nbefore
-                )
-                sparsity = si.compute_sparsity(templates_obj)
+            # generate some plots!
+            if CORRECT_MOTION:
+                templates_array = recording_hybrid.drifting_templates.templates_array
+            else:
+                templates_array = recording_hybrid.templates
+            templates_obj = si.Templates(
+                templates_array * recording.get_channel_gains()[0],
+                channel_ids=templates_selected.channel_ids,
+                unit_ids=sorting_hybrid.unit_ids,
+                probe=recording.get_probe(), 
+                sampling_frequency=templates_selected.sampling_frequency,
+                nbefore=templates_selected.nbefore
+            )
+            sparsity = si.compute_sparsity(templates_obj)
 
-                figsize = (7, 3*NUM_UNITS)
-                w = sw.plot_unit_templates(
-                    templates_obj,
-                    sparsity=sparsity,
-                    figsize=figsize,
-                    ncols=2,
-                    scalebar=True
-                )
-                
-                w.figure.savefig(flattened_folder / f"fig-templates_{case_name}.pdf")
+            figsize = (7, 3*NUM_UNITS)
+            w = sw.plot_unit_templates(
+                templates_obj,
+                sparsity=sparsity,
+                figsize=figsize,
+                ncols=2,
+                scalebar=True
+            )
+            
+            w.figure.savefig(flattened_folder / f"fig-templates_{case_name}.pdf")
