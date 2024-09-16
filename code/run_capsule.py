@@ -25,6 +25,17 @@ results_folder = Path("../results")
 # Define argument parser
 parser = argparse.ArgumentParser(description="Generate hybrid datasets")
 
+
+min_amplitude_group = parser.add_mutually_exclusive_group()
+min_amplitude_help = "Minimum amplitude to scale injected templates"
+min_amplitude_group.add_argument("--min-amp", help=min_amplitude_help)
+min_amplitude_group.add_argument("static_min_amp", nargs="?", default="50", help=min_amplitude_help)
+
+max_amplitude_group = parser.add_mutually_exclusive_group()
+max_amplitude_help = "Maximum amplitude to scale injected templates"
+max_amplitude_group.add_argument("--max-amp", help=max_amplitude_help)
+max_amplitude_group.add_argument("static_max_amp", nargs="?", default="200", help=max_amplitude_help)
+
 num_units_group = parser.add_mutually_exclusive_group()
 num_units_help = "Number of hybrid units for each case"
 num_units_group.add_argument("--num-units", help=num_units_help)
@@ -55,11 +66,10 @@ debug_duration_group.add_argument("static_debug_duration", nargs="?", default=No
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    with open("params.json", "r") as f:
-        params = json.load(f)
-
-    NUM_UNITS = int(args.num_units or args.static_num_units or params["num_units_per_case"])
-    NUM_CASES = int(args.num_cases or args.static_num_cases or params["num_cases"])
+    MIN_AMP = float(args.min_amp or args.static_min_amp)
+    MAX_AMP = float(args.max_amp or args.static_max_amp)
+    NUM_UNITS = int(args.num_units or args.static_num_units)
+    NUM_CASES = int(args.num_cases or args.static_num_cases)
     DEBUG = args.debug or args.static_debug == "true"
     DEBUG_DURATION = float(args.static_debug_duration or args.debug_duration)
 
@@ -69,8 +79,10 @@ if __name__ == "__main__":
     elif args.static_correct_motion is not None:
         CORRECT_MOTION = True if args.static_correct_motion == "true" else False
     else:
-        CORRECT_MOTION = params["correct_motion"]
+        CORRECT_MOTION = False
 
+    print(f"MIN_AMP: {MIN_AMP}")
+    print(f"MAX_AMP: {MAX_AMP}")
     print(f"NUM_UNITS: {NUM_UNITS}")
     print(f"NUM_CASES: {NUM_CASES}")
     print(f"CORRECT_MOTION: {CORRECT_MOTION}")
@@ -146,7 +158,8 @@ if __name__ == "__main__":
             w.figure.savefig(motion_figure_file, dpi=300)
 
         print(f"\tGenerating hybrid recordings")
-        min_amplitude, max_amplitude = params["amplitudes"]
+        min_amplitude = MIN_AMP
+        max_amplitude = MAX_AMP
         for case in range(NUM_CASES):
             print(f"\t\tGenerating case: {case}")
             case_name = f"{recording_name}_{case}"

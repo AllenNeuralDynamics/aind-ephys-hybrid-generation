@@ -1,6 +1,0 @@
-{
-    "amplitudes": [50, 200],
-    "num_units_per_case": 10,
-    "num_cases": 5,
-    "correct_motion": false
-}
