@@ -21,6 +21,8 @@ import spikeinterface.widgets as sw
 data_folder = Path("../data")
 results_folder = Path("../results")
 
+margin_from_border = 100
+
 
 # Define argument parser
 parser = argparse.ArgumentParser(description="Generate hybrid datasets")
@@ -118,6 +120,23 @@ if __name__ == "__main__":
         print(f"\n\nCreating hybrid recordings for {recording_name}")
         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
 
+        probes_info = recording.get_annotation("probes_info")
+        model_name = probes_info[0].get("model_name")
+        if model_name is None:
+            name = probes_info[0].get("name")
+            if name is not None and "Neuropixels" in name:
+                model_name = name
+        if "1.0" in model_name:
+            print("\tSelecting Neuropixels 1.0 templates")
+            templates_info = templates_info.query("probe == 'Neuropixels 1.0'")
+            relocate_templates = False
+        else:
+            print("\tSelecting Neuropixels Ultra templates")
+            templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
+            relocate_templates = True
+
+        print(f"\tSelected {len(templates_info)} templates from database")
+
         if DEBUG:
             recording_list = []
             for segment_index in range(recording.get_num_segments()):
@@ -131,7 +150,7 @@ if __name__ == "__main__":
         # skip times if non-monotonically increasing
         if job_dict["skip_times"]:
             recording.reset_times()
-        print(recording)
+        print(f"\tRecording: {recording}")
 
         # preprocess
         recording_preproc = spre.highpass_filter(recording)
@@ -173,10 +192,41 @@ if __name__ == "__main__":
             # fetch templates
             templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
+            # TODO: for NP-Ultra, move templates over the entire range
+            if relocate_templates:
+                from spikeinterface.generation.drift_tools import move_dense_templates
+
+                print(f"\t\t\tRelocating templates")
+
+                source_probe = templates_selected.probe
+                dest_probe = recording.get_probe()
+
+                channel_locations = recording.get_channel_locations()
+                min_depth = np.min(channel_locations[:, 1])
+                max_depth = np.max(channel_locations[:, 1])
+                template_depths = templates_selected_info["depth_along_probe"].values
+                templates_array_moved = templates_selected.templates_array.copy()
+                for i, template in enumerate(templates_selected.templates_array):
+                    starting_depth = template_depths[i]
+                    final_depth = np.random.uniform(min_depth, max_depth)
+                    random_displacement_depth = final_depth - starting_depth
+                    displacements = np.array([[0, random_displacement_depth]])
+                    template_moved = move_dense_templates(template[None], displacements, source_probe, dest_probe)
+                    templates_array_moved[i] = np.squeeze(template_moved)
+                templates_relocated = si.Templates(
+                    templates_array=templates_array_moved,
+                    nbefore=templates_selected.nbefore,
+                    sampling_frequency=templates_selected.sampling_frequency,
+                    unit_ids=templates_selected.unit_ids,
+                    probe=dest_probe
+                )
+            else:
+                templates_relocated = templates_selected
+
             # scale templates
             print(f"\t\t\tScaling templates between {min_amplitude} and {max_amplitude}")
             templates_scaled = sgen.scale_template_to_range(
-                templates=templates_selected,
+                templates=templates_relocated,
                 min_amplitude=min_amplitude,
                 max_amplitude=max_amplitude
             )
@@ -185,6 +235,9 @@ if __name__ == "__main__":
             for i in range(templates_scaled.num_units):
                 amplitudes[i] = np.ptp(templates_scaled.templates_array[i, :, extremum_channel_indices[i]])
             print(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
+
+            if templates_scaled.probe.device_channel_indices is None:
+                templates_scaled.probe.set_device_channel_indices(np.arange(recording.get_num_channels()))
 
             print(f"\t\t\tConstructing hybrid recording")
             recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
@@ -217,8 +270,6 @@ if __name__ == "__main__":
             recording_file_path.write_bytes(pickle.dumps(dump_dict))
             flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
             flattened_file_path.write_bytes(pickle.dumps(dump_dict))
-
-            # TODO: also save to recordings + flatten folder to parallelize
 
             sorting_hybrid.dump_to_pickle(
                 flattened_folder / f"gt_{case_name}.pkl",
