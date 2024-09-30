@@ -109,6 +109,8 @@ if __name__ == "__main__":
         job_dicts = job_dicts[:2]
         print(f"DEBUG MODE: restricted to {len(job_dicts)} JSON job files. Duration clipped to {DEBUG_DURATION} seconds")
 
+    si.set_global_job_kwargs(n_jobs=-1, progress_bar=False)
+
     templates_info = sgen.fetch_templates_database_info()
 
     # TODO: check this at database creation!
@@ -164,7 +166,7 @@ if __name__ == "__main__":
 
             recording_preproc_f = spre.astype(recording_preproc, "float")
             _, motion_info = spre.correct_motion(
-                recording_preproc_f, preset="dredge_fast", n_jobs=-1, progress_bar=False, output_motion_info=True, folder=motion_folder
+                recording_preproc_f, preset="dredge_fast",output_motion_info=True, folder=motion_folder
             )
             motion = motion_info["motion"]
             w = sw.plot_motion_info(
@@ -192,7 +194,6 @@ if __name__ == "__main__":
             # fetch templates
             templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
-            # TODO: for NP-Ultra, move templates over the entire range
             if relocate_templates:
                 from spikeinterface.generation.drift_tools import move_dense_templates
 
@@ -251,6 +252,16 @@ if __name__ == "__main__":
             # rename hybrid units with selected indices for provenance
             sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
+            print("\t\t\tComputing sorting analyzer")
+            analyzer_gt = si.create_sorting_analyzer(
+                sorting_hybrid,
+                recording_hybrid,
+                format="binary_folder",
+                folder=flattened_folder / f"analyzer_{case_name}"
+            )
+            # needed for SNR
+            analyzer_gt.compute(["noise_levels", "random_spikes", "templates"])
+
             # we construct here a pkl version of the job json because 
             # it needs to be compatible with the preprocessing capsule
             recording_dict = recording_hybrid.to_dict(
@@ -279,8 +290,39 @@ if __name__ == "__main__":
             # generate some plots!
             if CORRECT_MOTION:
                 templates_array = recording_hybrid.drifting_templates.templates_array
+
+                # generate raster maps
+                analyzer_gt.compute("spike_locations")
+                w = sw.plot_drift_raster_map(
+                    peaks=motion_info["peaks"],
+                    peak_locations=motion_info["peak_locations"],
+                    recording=recording_hybrid,
+                    cmap="Greys_r",
+                    scatter_decimate=10,
+                )
+                ax = w.ax
+                _ = sw.plot_drift_raster_map(
+                    sorting_analyzer=analyzer_gt,
+                    color_amplitude=False,
+                    color="b",
+                    scatter_decimate=10,
+                    ax=w.ax
+                )
+
+                motion = motion_info["motion"]
+                _ = ax.plot(
+                    motion.temporal_bins_s[0],
+                    motion.spatial_bins_um + motion.displacement[0],
+                    color="y",
+                    alpha=0.5
+                )
+                ax.set_title(case_name)
+
+                w.figure.savefig(flattened_folder / f"fig-rasters_{case_name}.png", dpi=300)
             else:
                 templates_array = recording_hybrid.templates
+
+            # generate templates plots
             templates_obj = si.Templates(
                 templates_array * recording.get_channel_gains()[0],
                 channel_ids=templates_selected.channel_ids,
@@ -296,8 +338,7 @@ if __name__ == "__main__":
                 templates_obj,
                 sparsity=sparsity,
                 figsize=figsize,
-                ncols=2,
-                scalebar=True
+                ncols=2
             )
             
             w.figure.savefig(flattened_folder / f"fig-templates_{case_name}.pdf")
