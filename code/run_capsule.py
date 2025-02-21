@@ -274,9 +274,10 @@ if __name__ == "__main__":
                 "session_name": job_dict["session_name"],
                 "recording_name": case_name,
                 "recording_dict": recording_dict,
-                "template_indices": templates_selected_indices
+                "template_indices": templates_selected_indices,
+                "debug": DEBUG,
+                "skip_times": job_dict["skip_times"]
             }
-            dump_dict["skip_times"] = job_dict["skip_times"]
             recording_file_path = recordings_folder / f"job_{case_name}.pkl"
             recording_file_path.write_bytes(pickle.dumps(dump_dict))
             flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
