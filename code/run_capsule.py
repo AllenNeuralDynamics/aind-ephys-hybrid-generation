@@ -293,7 +293,7 @@ if __name__ == "__main__":
                 templates_array = recording_hybrid.drifting_templates.templates_array
 
                 # generate raster maps
-                analyzer_gt.compute("spike_locations")
+                analyzer_gt.compute("spike_locations", method="grid_convolution")
                 w = sw.plot_drift_raster_map(
                     peaks=motion_info["peaks"],
                     peak_locations=motion_info["peak_locations"],
