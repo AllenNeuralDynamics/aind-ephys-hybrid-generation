@@ -87,7 +87,6 @@ if __name__ == "__main__":
     DEBUG = args.debug or args.static_debug == "true"
     DEBUG_DURATION = float(args.static_debug_duration or args.debug_duration)
 
-    print(args.skip_correct_motion)
     
     if args.static_correct_motion is not None:
         CORRECT_MOTION = True if args.static_correct_motion == "true" else False
