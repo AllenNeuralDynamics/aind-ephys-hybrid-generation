@@ -38,15 +38,25 @@ max_amplitude_help = "Maximum amplitude to scale injected templates"
 max_amplitude_group.add_argument("--max-amp", help=max_amplitude_help)
 max_amplitude_group.add_argument("static_max_amp", nargs="?", default="200", help=max_amplitude_help)
 
+min_depth_percentile_group = parser.add_mutually_exclusive_group()
+min_depth_percentile_help = "Percentile of depths used as minimum depth"
+min_depth_percentile_group.add_argument("--min-depth-percentile", help=min_depth_percentile_help)
+min_depth_percentile_group.add_argument("static_min_depth_percentile", nargs="?", default="5", help=min_depth_percentile_help)
+
+max_depth_percentile_group = parser.add_mutually_exclusive_group()
+max_depth_percentile_help = "Percentile of depths used as maximum depth"
+max_depth_percentile_group.add_argument("--max-depth-percentile", help=max_depth_percentile_help)
+max_depth_percentile_group.add_argument("static_max_depth_percentile", nargs="?", default="95", help=max_depth_percentile_help)
+
 num_units_group = parser.add_mutually_exclusive_group()
 num_units_help = "Number of hybrid units for each case"
 num_units_group.add_argument("--num-units", help=num_units_help)
-num_units_group.add_argument("static_num_units", nargs="?", help=num_units_help)
+num_units_group.add_argument("static_num_units", nargs="?", default="10", help=num_units_help)
 
 num_cases_group = parser.add_mutually_exclusive_group()
 num_cases_help = "Number of cases for each recording"
 num_cases_group.add_argument("--num-cases", help=num_cases_help)
-num_cases_group.add_argument("static_num_cases", nargs="?", help=num_cases_help)
+num_cases_group.add_argument("static_num_cases", nargs="?", default="5", help=num_cases_help)
 
 correct_motion_group = parser.add_mutually_exclusive_group()
 correct_motion_help = "Whether to concatenate recordings (segments) or not. Default: False"
@@ -70,21 +80,25 @@ if __name__ == "__main__":
 
     MIN_AMP = float(args.min_amp or args.static_min_amp)
     MAX_AMP = float(args.max_amp or args.static_max_amp)
+    MIN_DEPTH_PERC = float(args.min_depth_percentile or args.static_min_depth_percentile)
+    MAX_DEPTH_PERC = float(args.max_depth_percentile or args.static_max_depth_percentile)
     NUM_UNITS = int(args.num_units or args.static_num_units)
     NUM_CASES = int(args.num_cases or args.static_num_cases)
     DEBUG = args.debug or args.static_debug == "true"
     DEBUG_DURATION = float(args.static_debug_duration or args.debug_duration)
 
-
-    if args.skip_correct_motion:
-        CORRECT_MOTION = False
-    elif args.static_correct_motion is not None:
+    
+    if args.static_correct_motion is not None:
         CORRECT_MOTION = True if args.static_correct_motion == "true" else False
-    else:
+    elif args.skip_correct_motion:
         CORRECT_MOTION = False
+    else:
+        CORRECT_MOTION = True
 
     print(f"MIN_AMP: {MIN_AMP}")
     print(f"MAX_AMP: {MAX_AMP}")
+    print(f"MIN_DEPTH_PERCENTILE: {MIN_DEPTH_PERC}")
+    print(f"MAX_DEPTH_PERCENTILE: {MAX_DEPTH_PERC}")
     print(f"NUM_UNITS: {NUM_UNITS}")
     print(f"NUM_CASES: {NUM_CASES}")
     print(f"CORRECT_MOTION: {CORRECT_MOTION}")
@@ -132,10 +146,12 @@ if __name__ == "__main__":
             print("\tSelecting Neuropixels 1.0 templates")
             templates_info = templates_info.query("probe == 'Neuropixels 1.0'")
             relocate_templates = False
+            select_by_depth = True
         else:
             print("\tSelecting Neuropixels Ultra templates")
             templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
             relocate_templates = True
+            select_by_depth = False
 
         print(f"\tSelected {len(templates_info)} templates from database")
 
@@ -181,12 +197,24 @@ if __name__ == "__main__":
         print(f"\tGenerating hybrid recordings")
         min_amplitude = MIN_AMP
         max_amplitude = MAX_AMP
+        min_depth_percentile = MIN_DEPTH_PERC
+        max_depth_percentile = MAX_DEPTH_PERC
         for case in range(NUM_CASES):
             print(f"\t\tGenerating case: {case}")
             case_name = f"{recording_name}_{case}"
 
             # sample templates
             print(f"\t\t\tSelecting and fetching templates")
+            if CORRECT_MOTION and min_depth_percentile is not None and max_depth_percentile is not None:
+                peak_depths = motion_info["peak_locations"]["y"]
+                min_depth, max_depth = np.percentile(peak_depths, [min_depth_percentile, max_depth_percentile])
+                print(f"Depth limits: {min_depth} - {max_depth} um")
+            else:
+                min_depth, max_depth = None, None
+
+            if select_by_depth:
+                print(f"Selecting templates using depth limits: {min_depth}-{max_depth}")
+                templates_info = templates_info.query(f"{min_depth} <= depth_along_probe <= {max_depth}")
             templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
             print(f"\t\t\tSelected indices: {list(templates_selected_indices)}")
             templates_selected_info = templates_info.loc[templates_selected_indices]
@@ -203,8 +231,9 @@ if __name__ == "__main__":
                 dest_probe = recording.get_probe()
 
                 channel_locations = recording.get_channel_locations()
-                min_depth = np.min(channel_locations[:, 1])
-                max_depth = np.max(channel_locations[:, 1])
+                min_depth = min_depth or np.min(channel_locations[:, 1])
+                max_depth = max_depth or np.max(channel_locations[:, 1])
+                print(f"Relocating templates using depth limits: {min_depth}-{max_depth}")
                 template_depths = templates_selected_info["depth_along_probe"].values
                 templates_array_moved = templates_selected.templates_array.copy()
                 for i, template in enumerate(templates_selected.templates_array):
