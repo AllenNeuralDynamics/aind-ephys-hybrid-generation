@@ -63,17 +63,6 @@ correct_motion_help = "Whether to concatenate recordings (segments) or not. Defa
 correct_motion_group.add_argument("--skip-correct-motion", action="store_true", help=correct_motion_help)
 correct_motion_group.add_argument("static_correct_motion", nargs="?", help=correct_motion_help)
 
-debug_group = parser.add_mutually_exclusive_group()
-debug_help = "Whether to run in DEBUG mode"
-debug_group.add_argument("--debug", action="store_true", help=debug_help)
-debug_group.add_argument("static_debug", nargs="?", default="false", help=debug_help)
-
-debug_duration_group = parser.add_mutually_exclusive_group()
-debug_duration_help = (
-    "Duration of clipped recording in debug mode. Default is 30 seconds. Only used if debug is enabled"
-)
-debug_duration_group.add_argument("--debug-duration", default=30, help=debug_duration_help)
-debug_duration_group.add_argument("static_debug_duration", nargs="?", default=None, help=debug_duration_help)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -84,9 +73,6 @@ if __name__ == "__main__":
     MAX_DEPTH_PERC = float(args.max_depth_percentile or args.static_max_depth_percentile)
     NUM_UNITS = int(args.num_units or args.static_num_units)
     NUM_CASES = int(args.num_cases or args.static_num_cases)
-    DEBUG = args.debug or args.static_debug == "true"
-    DEBUG_DURATION = float(args.static_debug_duration or args.debug_duration)
-
     
     if args.static_correct_motion is not None:
         CORRECT_MOTION = True if args.static_correct_motion == "true" else False
@@ -119,9 +105,6 @@ if __name__ == "__main__":
             job_dict = json.load(f)
         job_dicts.append(job_dict)
     print(f"Found {len(job_dicts)} JSON job files")
-    if DEBUG:
-        job_dicts = job_dicts[:2]
-        print(f"DEBUG MODE: restricted to {len(job_dicts)} JSON job files. Duration clipped to {DEBUG_DURATION} seconds")
 
     si.set_global_job_kwargs(n_jobs=-1, progress_bar=False)
 
@@ -155,16 +138,6 @@ if __name__ == "__main__":
 
         print(f"\tSelected {len(templates_info)} templates from database")
 
-        if DEBUG:
-            recording_list = []
-            for segment_index in range(recording.get_num_segments()):
-                recording_one = si.split_recording(recording)[segment_index]
-                recording_one = recording_one.frame_slice(
-                    start_frame=0, end_frame=int(DEBUG_DURATION * recording.sampling_frequency)
-                )
-                recording_list.append(recording_one)
-            recording = si.append_recordings(recording_list)
-            
         # skip times if non-monotonically increasing
         if job_dict["skip_times"]:
             recording.reset_times()
@@ -304,7 +277,7 @@ if __name__ == "__main__":
                 "recording_name": case_name,
                 "recording_dict": recording_dict,
                 "template_indices": templates_selected_indices,
-                "debug": DEBUG,
+                "debug": job_dict["debug"],
                 "skip_times": job_dict["skip_times"]
             }
             recording_file_path = recordings_folder / f"job_{case_name}.pkl"
