@@ -285,10 +285,7 @@ if __name__ == "__main__":
             flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
             flattened_file_path.write_bytes(pickle.dumps(dump_dict))
 
-            sorting_hybrid.dump_to_pickle(
-                flattened_folder / f"gt_{case_name}.pkl",
-                relative_to=data_folder
-            )
+            sorting_hybrid.dump_to_pickle(flattened_folder / f"gt_{case_name}.pkl")
 
             # generate some plots!
             if CORRECT_MOTION:
