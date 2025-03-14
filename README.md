@@ -15,8 +15,6 @@ The `data/` folder must include the session data and at least one JSON file gene
 
 ### Parameters
 
-### Parameters
-
 The `code/run` script takes the following arguments:
 
 
