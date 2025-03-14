@@ -59,7 +59,7 @@ num_cases_group.add_argument("--num-cases", help=num_cases_help)
 num_cases_group.add_argument("static_num_cases", nargs="?", default="5", help=num_cases_help)
 
 correct_motion_group = parser.add_mutually_exclusive_group()
-correct_motion_help = "Whether to concatenate recordings (segments) or not. Default: False"
+correct_motion_help = "Whether to skip motion correction."
 correct_motion_group.add_argument("--skip-correct-motion", action="store_true", help=correct_motion_help)
 correct_motion_group.add_argument("static_correct_motion", nargs="?", help=correct_motion_help)
 
