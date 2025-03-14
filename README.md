@@ -52,9 +52,3 @@ The `flattened` folder contains the following:
 In addition it includes some figures:
 - `flattened/fig-rasters_{recording_name}_{case_name}.png`: a raster map with overlayed ground-truth spikes and motion
 - `flattened/fig-motion_{recording_name}.png`: the output of the `spikeinterface.widgets.plot_motion` function with the estimated motion and corrected peaks.
-
-
-
-
-
-1.0.0## Version- Runtime: Varies based on recording size, typically 1-4 hours per recording- CPU: 8+ cores recommended- RAM: 32GB minimum recommended
