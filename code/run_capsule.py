@@ -120,18 +120,26 @@ if __name__ == "__main__":
         recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
 
         probes_info = recording.get_annotation("probes_info")
-        model_name = probes_info[0].get("model_name")
-        if model_name is None:
+        model_name = None
+        if probes_info is not None:
+            model_name = probes_info[0].get("model_name")
             name = probes_info[0].get("name")
-            if name is not None and "Neuropixels" in name:
-                model_name = name
-        if "1.0" in model_name:
-            print("\tSelecting Neuropixels 1.0 templates")
+            if model_name is None:
+                if name is not None and "Neuropixels" in name:
+                    model_name = name
+
+        if model_name is None:
+            print("\tCould not load probes info. Selecting Neuropixels Ultra templates")
+            templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
+            relocate_templates = True
+            select_by_depth = False
+        elif "1.0" in model_name:
+            print("\tProbe model: {model_name}. Selecting Neuropixels 1.0 templates")
             templates_info = templates_info.query("probe == 'Neuropixels 1.0'")
             relocate_templates = False
             select_by_depth = True
         else:
-            print("\tSelecting Neuropixels Ultra templates")
+            print("\tProbe model: {model_name}. Selecting Neuropixels Ultra templates")
             templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
             relocate_templates = True
             select_by_depth = False
