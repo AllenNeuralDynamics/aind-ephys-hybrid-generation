@@ -210,13 +210,17 @@ if __name__ == "__main__":
 
                 source_probe = templates_selected.probe
                 dest_probe = recording.get_probe()
+                dest_num_channels = recording.get_num_channels()
+                num_samples = templates_selected.num_samples
 
                 channel_locations = recording.get_channel_locations()
                 min_depth = min_depth or np.min(channel_locations[:, 1])
                 max_depth = max_depth or np.max(channel_locations[:, 1])
                 print(f"Relocating templates using depth limits: {min_depth}-{max_depth}")
                 template_depths = templates_selected_info["depth_along_probe"].values
-                templates_array_moved = templates_selected.templates_array.copy()
+                templates_array_moved = np.zeros(
+                    (templates_selected.num_units, templates_selected.num_samples, dest_num_channels)
+                )
                 for i, template in enumerate(templates_selected.templates_array):
                     starting_depth = template_depths[i]
                     final_depth = np.random.uniform(min_depth, max_depth)
