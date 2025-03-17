@@ -337,7 +337,7 @@ if __name__ == "__main__":
             # generate templates plots
             templates_obj = si.Templates(
                 templates_array * recording.get_channel_gains()[0],
-                channel_ids=templates_selected.channel_ids,
+                channel_ids=recording.channel_ids,
                 unit_ids=sorting_hybrid.unit_ids,
                 probe=recording.get_probe(), 
                 sampling_frequency=templates_selected.sampling_frequency,
