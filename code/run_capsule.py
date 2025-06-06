@@ -63,6 +63,16 @@ correct_motion_help = "Whether to skip motion correction."
 correct_motion_group.add_argument("--skip-correct-motion", action="store_true", help=correct_motion_help)
 correct_motion_group.add_argument("static_correct_motion", nargs="?", help=correct_motion_help)
 
+win_step_norm_group = parser.add_mutually_exclusive_group()
+win_step_norm_help = "Percent of win_step motion parameter with respect to probe span. Default: 0.1"
+win_step_norm_group.add_argument("--win-step-norm", help=win_step_norm_help)
+win_step_norm_group.add_argument("static_win_step_norm", nargs="?", default="0.1", help=win_step_norm_help)
+
+win_scale_norm_group = parser.add_mutually_exclusive_group()
+win_scale_norm_help = "Percent of win_scale motion parameter with respect to probe span. Default: 0.1"
+win_scale_norm_group.add_argument("--win-scale-norm", help=win_scale_norm_help)
+win_scale_norm_group.add_argument("static_win_scale_norm", nargs="?", default="0.1", help=win_scale_norm_help)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -73,6 +83,8 @@ if __name__ == "__main__":
     MAX_DEPTH_PERC = float(args.max_depth_percentile or args.static_max_depth_percentile)
     NUM_UNITS = int(args.num_units or args.static_num_units)
     NUM_CASES = int(args.num_cases or args.static_num_cases)
+    WIN_STEP_NORM = float(args.win_step_norm or args.static_win_step_norm)
+    WIN_SCALE_NORM = float(args.win_scale_norm or args.static_win_scale_norm)
     
     if args.static_correct_motion is not None:
         CORRECT_MOTION = True if args.static_correct_motion == "true" else False
@@ -81,6 +93,7 @@ if __name__ == "__main__":
     else:
         CORRECT_MOTION = True
 
+
     print(f"MIN_AMP: {MIN_AMP}")
     print(f"MAX_AMP: {MAX_AMP}")
     print(f"MIN_DEPTH_PERCENTILE: {MIN_DEPTH_PERC}")
@@ -88,6 +101,8 @@ if __name__ == "__main__":
     print(f"NUM_UNITS: {NUM_UNITS}")
     print(f"NUM_CASES: {NUM_CASES}")
     print(f"CORRECT_MOTION: {CORRECT_MOTION}")
+    print(f"WIN_STEP_NORM: {WIN_STEP_NORM}")
+    print(f"WIN_SCALE_NORM: {WIN_SCALE_NORM}")
 
     # this folder is used for parallelization
     recordings_folder = results_folder / "recordings"
@@ -161,19 +176,33 @@ if __name__ == "__main__":
             motion_folder = flattened_folder / f"motion_{recording_name}"
             motion_figure_file = flattened_folder / f"fig-motion_{recording_name}.png"
 
-            recording_preproc_f = spre.astype(recording_preproc, "float")
-            _, motion_info = spre.correct_motion(
-                recording_preproc_f, preset="dredge_fast",output_motion_info=True, folder=motion_folder
+            probe_span = np.ptp(recording.get_channel_locations()[:, 1])
+
+            estimate_motion_kwargs = {}
+            win_step_um = WIN_STEP_NORM * probe_span
+            estimate_motion_kwargs["win_step_um"] = win_step_um
+            win_scale_um = WIN_SCALE_NORM * probe_span
+            estimate_motion_kwargs["win_scale_um"] = win_scale_um
+            print(f"\t\tEstimate motion kwargs: {estimate_motion_kwargs}")
+
+            # use compute motion
+            motion = spre.compute_motion(
+                recording_preproc.astype(float),
+                preset="dredge_fast",
+                folder=motion_folder,
+                estimate_motion_kwargs=estimate_motion_kwargs,
+                raise_error=False
             )
-            motion = motion_info["motion"]
-            w = sw.plot_motion_info(
-                motion_info,
-                recording_preproc,
-                color_amplitude=True,
-                scatter_decimate=10,
-                amplitude_cmap="Greys_r"
-            )
-            w.figure.savefig(motion_figure_file, dpi=300)
+
+            if motion is not None:
+                w = sw.plot_motion_info(
+                    motion_info,
+                    recording_preproc,
+                    color_amplitude=True,
+                    scatter_decimate=10,
+                    amplitude_cmap="Greys_r"
+                )
+                w.figure.savefig(motion_figure_file, dpi=300)
 
         print(f"\tGenerating hybrid recordings")
         min_amplitude = MIN_AMP
