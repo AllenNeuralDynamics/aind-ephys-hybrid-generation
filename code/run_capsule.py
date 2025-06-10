@@ -186,11 +186,12 @@ if __name__ == "__main__":
             print(f"\t\tEstimate motion kwargs: {estimate_motion_kwargs}")
 
             # use compute motion
-            motion = spre.compute_motion(
+            motion, motion_info = spre.compute_motion(
                 recording_preproc.astype(float),
                 preset="dredge_fast",
                 folder=motion_folder,
                 estimate_motion_kwargs=estimate_motion_kwargs,
+                output_motion_info=True,
                 raise_error=False
             )
 
