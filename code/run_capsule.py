@@ -7,11 +7,13 @@ import os
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 import argparse
+import warnings
 import json
 import pickle
 import numpy as np
 from pathlib import Path
 
+import probeinterface as pi
 import spikeinterface as si
 import spikeinterface.preprocessing as spre
 import spikeinterface.generation as sgen
@@ -132,7 +134,7 @@ if __name__ == "__main__":
     for job_dict in job_dicts:
         recording_name = job_dict["recording_name"]
         print(f"\n\nCreating hybrid recordings for {recording_name}")
-        recording = si.load_extractor(job_dict["recording_dict"], base_folder=data_folder)
+        recording = si.load(job_dict["recording_dict"], base_folder=data_folder)
 
         probes_info = recording.get_annotation("probes_info")
         model_name = None
@@ -171,6 +173,9 @@ if __name__ == "__main__":
         recording_preproc = spre.common_reference(recording_preproc)
 
         motion = None
+        min_depth_percentile = MIN_DEPTH_PERC
+        max_depth_percentile = MAX_DEPTH_PERC
+        min_depth, max_depth = None, None
         if CORRECT_MOTION:
             print("\tEstimating motion")
             motion_folder = flattened_folder / f"motion_{recording_name}"
@@ -205,36 +210,35 @@ if __name__ == "__main__":
                 )
                 w.figure.savefig(motion_figure_file, dpi=300)
 
+                if min_depth_percentile is not None and max_depth_percentile is not None:
+                    peak_depths = motion_info["peak_locations"]["y"]
+                    min_depth, max_depth = np.percentile(peak_depths, [min_depth_percentile, max_depth_percentile])
+                    print(f"\t\t\tDepth limits: {np.round(min_depth, 2)} - {np.round(max_depth, 2)} um")
+
+
         print(f"\tGenerating hybrid recordings")
         min_amplitude = MIN_AMP
         max_amplitude = MAX_AMP
-        min_depth_percentile = MIN_DEPTH_PERC
-        max_depth_percentile = MAX_DEPTH_PERC
         for case in range(NUM_CASES):
             print(f"\t\tGenerating case: {case}")
             case_name = f"{recording_name}_{case}"
 
             # sample templates
             print(f"\t\t\tSelecting and fetching templates")
-            if CORRECT_MOTION and min_depth_percentile is not None and max_depth_percentile is not None:
-                peak_depths = motion_info["peak_locations"]["y"]
-                min_depth, max_depth = np.percentile(peak_depths, [min_depth_percentile, max_depth_percentile])
-                print(f"Depth limits: {min_depth} - {max_depth} um")
-            else:
-                min_depth, max_depth = None, None
 
             if select_by_depth:
-                print(f"Selecting templates using depth limits: {min_depth}-{max_depth}")
+                print(f"\t\t\tSelecting templates using depth limits: {min_depth}-{max_depth}")
                 templates_info = templates_info.query(f"{min_depth} <= depth_along_probe <= {max_depth}")
-            templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
-            print(f"\t\t\tSelected indices: {list(templates_selected_indices)}")
-            templates_selected_info = templates_info.loc[templates_selected_indices]
-
-            # fetch templates
-            templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
             if relocate_templates:
                 from spikeinterface.generation.drift_tools import move_dense_templates
+
+                # select more UNITS, to account for bad interpolations
+                templates_selected_indices = np.random.choice(templates_info.index, size=2 * NUM_UNITS, replace=False)
+                templates_selected_info = templates_info.loc[templates_selected_indices]
+
+                # fetch templates
+                templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
                 print(f"\t\t\tRelocating templates")
 
@@ -243,29 +247,64 @@ if __name__ == "__main__":
                 dest_num_channels = recording.get_num_channels()
                 num_samples = templates_selected.num_samples
 
+                # check if needs x-shift correction (e.g., on different shanks)
+                src_x = np.min(source_probe.contact_positions[:, 0])
+                dst_x = np.min(dest_probe.contact_positions[:, 0])
+                if np.abs(dst_x - src_x) > 100:
+                    print(f"\t\t\tShifting source probe by {dst_x - src_x} in x direction")
+                    source_probe.move([dst_x - src_x, 0])
+
+                sparsity = si.compute_sparsity(templates_selected, method="radius", radius_um=100)
+
                 channel_locations = recording.get_channel_locations()
                 min_depth = min_depth or np.min(channel_locations[:, 1])
                 max_depth = max_depth or np.max(channel_locations[:, 1])
-                print(f"Relocating templates using depth limits: {min_depth}-{max_depth}")
+                print(f"\t\t\tRelocating templates using depth limits: {min_depth}-{max_depth}")
                 template_depths = templates_selected_info["depth_along_probe"].values
                 templates_array_moved = np.zeros(
                     (templates_selected.num_units, templates_selected.num_samples, dest_num_channels)
                 )
-                for i, template in enumerate(templates_selected.templates_array):
+                num_relocated_templates = 0
+                for i, unit_id in enumerate(templates_selected.unit_ids):
+                    if num_relocated_templates == NUM_UNITS:
+                        break
+                    template = templates_selected.templates_array[i]
                     starting_depth = template_depths[i]
                     final_depth = np.random.uniform(min_depth, max_depth)
                     random_displacement_depth = final_depth - starting_depth
                     displacements = np.array([[0, random_displacement_depth]])
-                    template_moved = move_dense_templates(template[None], displacements, source_probe, dest_probe)
-                    templates_array_moved[i] = np.squeeze(template_moved)
+                    # only select sparse channels for better signal quality
+                    sparse_channel_mask = sparsity.mask[i]
+                    template_sparse = template[:, sparse_channel_mask]
+                    source_probe_sparse = pi.Probe.from_numpy(source_probe.to_numpy()[sparse_channel_mask])
+                    template_moved = move_dense_templates(template_sparse[None], displacements, source_probe_sparse, dest_probe)
+                    template_moved = np.squeeze(template_moved)
+                    if np.ptp(template_moved) > 0.5 * np.ptp(template):
+                        templates_array_moved[num_relocated_templates] = np.squeeze(template_moved)
+                        num_relocated_templates += 1
+
+                if num_relocated_templates < NUM_UNITS:
+                    print(f"\t\t\tCould not relocate all templates. Only added {num_relocated_templates}")
+                templates_array_moved = templates_array_moved[:num_relocated_templates]
+                templates_selected_indices = templates_selected_indices[:num_relocated_templates]
+                unit_ids = templates_selected.unit_ids[:num_relocated_templates]
+
+                print(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
                 templates_relocated = si.Templates(
                     templates_array=templates_array_moved,
                     nbefore=templates_selected.nbefore,
                     sampling_frequency=templates_selected.sampling_frequency,
-                    unit_ids=templates_selected.unit_ids,
+                    unit_ids=unit_ids,
                     probe=dest_probe
                 )
             else:
+                # select more UNITS, to account for bad interpolations
+                templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
+                print(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
+                templates_selected_info = templates_info.loc[templates_selected_indices]
+
+                # fetch templates
+                templates_selected = sgen.query_templates_from_database(templates_selected_info)
                 templates_relocated = templates_selected
 
             # scale templates
