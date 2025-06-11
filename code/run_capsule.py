@@ -126,7 +126,7 @@ if __name__ == "__main__":
     # Use CO_CPUS/SLURM_JOB_CPUS_PER_NODE env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("SLURM_JOB_CPUS_PER_NODE")
     N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
-    si.set_global_job_kwargs(dict(n_jobs=N_JOBS, progress_bar=False))
+    si.set_global_job_kwargs(n_jobs=N_JOBS, progress_bar=False)
 
     templates_info = sgen.fetch_templates_database_info()
 
