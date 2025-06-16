@@ -336,9 +336,6 @@ if __name__ == "__main__":
             )
             print(f"\t\t\t{recording_hybrid}")
 
-            # remove excess spikes (and figure out why they appear!)
-            sorting_hybrid = scur.remove_excess_spikes(sorting_hybrid, recording_hybrid)
-
             # rename hybrid units with selected indices for provenance
             sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
