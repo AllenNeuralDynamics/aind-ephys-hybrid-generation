@@ -331,6 +331,7 @@ if __name__ == "__main__":
             recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
                 recording=recording_preproc,
                 templates=templates_scaled,
+                are_templates_scaled=True,
                 motion=motion,
                 seed=None,
             )
