@@ -1,12 +1,13 @@
 """ top level run script """
 # GENERAL IMPORTS
 import os
+import logging
+import sys
 
 # this is needed to limit the number of scipy threads
 # and let spikeinterface handle parallelization
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-import argparse
 import warnings
 import json
 import pickle
@@ -23,89 +24,62 @@ import spikeinterface.widgets as sw
 
 data_folder = Path("../data")
 results_folder = Path("../results")
+PARAMS_FILE = Path("../params.json")
 
 margin_from_border = 100
 
 
-# Define argument parser
-parser = argparse.ArgumentParser(description="Generate hybrid datasets")
+def run() -> None:
+    if not PARAMS_FILE.is_file():
+        raise ValueError(f"Params file not found: {PARAMS_FILE}")
+    with open(PARAMS_FILE, "r") as f:
+        full_params = json.load(f)
+    hybrid_generation_params = full_params["hybrid_generation"]
+    LOGGING = full_params.get("logging", None)
 
-
-min_amplitude_group = parser.add_mutually_exclusive_group()
-min_amplitude_help = "Minimum amplitude to scale injected templates"
-min_amplitude_group.add_argument("--min-amp", help=min_amplitude_help)
-min_amplitude_group.add_argument("static_min_amp", nargs="?", default="50", help=min_amplitude_help)
-
-max_amplitude_group = parser.add_mutually_exclusive_group()
-max_amplitude_help = "Maximum amplitude to scale injected templates"
-max_amplitude_group.add_argument("--max-amp", help=max_amplitude_help)
-max_amplitude_group.add_argument("static_max_amp", nargs="?", default="200", help=max_amplitude_help)
-
-min_depth_percentile_group = parser.add_mutually_exclusive_group()
-min_depth_percentile_help = "Percentile of depths used as minimum depth"
-min_depth_percentile_group.add_argument("--min-depth-percentile", help=min_depth_percentile_help)
-min_depth_percentile_group.add_argument("static_min_depth_percentile", nargs="?", default="5", help=min_depth_percentile_help)
-
-max_depth_percentile_group = parser.add_mutually_exclusive_group()
-max_depth_percentile_help = "Percentile of depths used as maximum depth"
-max_depth_percentile_group.add_argument("--max-depth-percentile", help=max_depth_percentile_help)
-max_depth_percentile_group.add_argument("static_max_depth_percentile", nargs="?", default="95", help=max_depth_percentile_help)
-
-num_units_group = parser.add_mutually_exclusive_group()
-num_units_help = "Number of hybrid units for each case"
-num_units_group.add_argument("--num-units", help=num_units_help)
-num_units_group.add_argument("static_num_units", nargs="?", default="10", help=num_units_help)
-
-num_cases_group = parser.add_mutually_exclusive_group()
-num_cases_help = "Number of cases for each recording"
-num_cases_group.add_argument("--num-cases", help=num_cases_help)
-num_cases_group.add_argument("static_num_cases", nargs="?", default="5", help=num_cases_help)
-
-correct_motion_group = parser.add_mutually_exclusive_group()
-correct_motion_help = "Whether to skip motion correction."
-correct_motion_group.add_argument("--skip-correct-motion", action="store_true", help=correct_motion_help)
-correct_motion_group.add_argument("static_correct_motion", nargs="?", help=correct_motion_help)
-
-win_step_norm_group = parser.add_mutually_exclusive_group()
-win_step_norm_help = "Percent of win_step motion parameter with respect to probe span. Default: 0.1"
-win_step_norm_group.add_argument("--win-step-norm", help=win_step_norm_help)
-win_step_norm_group.add_argument("static_win_step_norm", nargs="?", default="0.1", help=win_step_norm_help)
-
-win_scale_norm_group = parser.add_mutually_exclusive_group()
-win_scale_norm_help = "Percent of win_scale motion parameter with respect to probe span. Default: 0.1"
-win_scale_norm_group.add_argument("--win-scale-norm", help=win_scale_norm_help)
-win_scale_norm_group.add_argument("static_win_scale_norm", nargs="?", default="0.1", help=win_scale_norm_help)
-
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-
-    MIN_AMP = float(args.min_amp or args.static_min_amp)
-    MAX_AMP = float(args.max_amp or args.static_max_amp)
-    MIN_DEPTH_PERC = float(args.min_depth_percentile or args.static_min_depth_percentile)
-    MAX_DEPTH_PERC = float(args.max_depth_percentile or args.static_max_depth_percentile)
-    NUM_UNITS = int(args.num_units or args.static_num_units)
-    NUM_CASES = int(args.num_cases or args.static_num_cases)
-    WIN_STEP_NORM = float(args.win_step_norm or args.static_win_step_norm)
-    WIN_SCALE_NORM = float(args.win_scale_norm or args.static_win_scale_norm)
-    
-    if args.static_correct_motion is not None:
-        CORRECT_MOTION = True if args.static_correct_motion == "true" else False
-    elif args.skip_correct_motion:
-        CORRECT_MOTION = False
+    # setup logging before any other logging call
+    if LOGGING is None:
+        logging.basicConfig(level="INFO", stream=sys.stdout, format="%(message)s")
     else:
-        CORRECT_MOTION = True
+        if LOGGING["package"] == "logging":
+            logging_cfg = LOGGING.get("logging_cfg", {})
+            logging.basicConfig(stream=sys.stdout, **logging_cfg)
+        elif LOGGING["package"] == "log-schema":
+            import log_schema
+
+            pipeline_name = LOGGING.get("pipeline_name", "AIND Ephys Hybrid Benchmark")
+            acquisition_name = LOGGING.get("acquisition_name", "unknown")
+
+            config = LOGGING.get("logging_cfg")
+            if config is not None and len(config) == 0:
+                config = None
+            log_schema.setup_logging(
+                config=config,
+                model={
+                    "pipeline_name": pipeline_name,
+                    "acquisition_name": acquisition_name,
+                    "process_name": "Hybrid Generation"
+                }
+            )
+
+    logging.info("Begin processing...", extra={"event_type": "stage_start"})
 
 
-    print(f"MIN_AMP: {MIN_AMP}")
-    print(f"MAX_AMP: {MAX_AMP}")
-    print(f"MIN_DEPTH_PERCENTILE: {MIN_DEPTH_PERC}")
-    print(f"MAX_DEPTH_PERCENTILE: {MAX_DEPTH_PERC}")
-    print(f"NUM_UNITS: {NUM_UNITS}")
-    print(f"NUM_CASES: {NUM_CASES}")
-    print(f"CORRECT_MOTION: {CORRECT_MOTION}")
-    print(f"WIN_STEP_NORM: {WIN_STEP_NORM}")
-    print(f"WIN_SCALE_NORM: {WIN_SCALE_NORM}")
+    MIN_AMP = float(hybrid_generation_params.get("min_amp", 50))
+    MAX_AMP = float(hybrid_generation_params.get("max_amp", 200))
+    MIN_DEPTH_PERC = float(hybrid_generation_params.get("min_depth_percentile", 5))
+    MAX_DEPTH_PERC = float(hybrid_generation_params.get("max_depth_percentile", 95))
+    NUM_UNITS = int(hybrid_generation_params.get("num_units", 10))
+    NUM_CASES = int(hybrid_generation_params.get("num_cases", 5))
+    CORRECT_MOTION = hybrid_generation_params.get("correct_motion", True)
+
+    logging.info(f"MIN_AMP: {MIN_AMP}")
+    logging.info(f"MAX_AMP: {MAX_AMP}")
+    logging.info(f"MIN_DEPTH_PERCENTILE: {MIN_DEPTH_PERC}")
+    logging.info(f"MAX_DEPTH_PERCENTILE: {MAX_DEPTH_PERC}")
+    logging.info(f"NUM_UNITS: {NUM_UNITS}")
+    logging.info(f"NUM_CASES: {NUM_CASES}")
+    logging.info(f"CORRECT_MOTION: {CORRECT_MOTION}")
 
     # this folder is used for parallelization
     recordings_folder = results_folder / "recordings"
@@ -122,7 +96,7 @@ if __name__ == "__main__":
         with open(job_json_file) as f:
             job_dict = json.load(f)
         job_dicts.append(job_dict)
-    print(f"Found {len(job_dicts)} JSON job files")
+    logging.info(f"Found {len(job_dicts)} JSON job files")
 
     # Use CO_CPUS/N_JOBS_EXT env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
@@ -137,7 +111,7 @@ if __name__ == "__main__":
     # for each JSON file, we now create hybrid recordings
     for job_dict in job_dicts:
         recording_name = job_dict["recording_name"]
-        print(f"\n\nCreating hybrid recordings for {recording_name}")
+        logging.info(f"\n\nCreating hybrid recordings for {recording_name}")
         recording = si.load(job_dict["recording_dict"], base_folder=data_folder)
 
         probes_info = recording.get_annotation("probes_info")
@@ -150,27 +124,27 @@ if __name__ == "__main__":
                     model_name = name
 
         if model_name is None:
-            print("\tCould not load probes info. Selecting Neuropixels Ultra templates")
+            logging.info("\tCould not load probes info. Selecting Neuropixels Ultra templates")
             templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
             relocate_templates = True
             select_by_depth = False
         elif "1.0" in model_name:
-            print("\tProbe model: {model_name}. Selecting Neuropixels 1.0 templates")
+            logging.info("\tProbe model: {model_name}. Selecting Neuropixels 1.0 templates")
             templates_info = templates_info.query("probe == 'Neuropixels 1.0'")
             relocate_templates = False
             select_by_depth = True
         else:
-            print("\tProbe model: {model_name}. Selecting Neuropixels Ultra templates")
+            logging.info("\tProbe model: {model_name}. Selecting Neuropixels Ultra templates")
             templates_info = templates_info.query("probe == 'Neuropixels Ultra'")
             relocate_templates = True
             select_by_depth = False
 
-        print(f"\tSelected {len(templates_info)} templates from database")
+        logging.info(f"\tSelected {len(templates_info)} templates from database")
 
         # skip times if non-monotonically increasing
         if job_dict["skip_times"]:
             recording.reset_times()
-        print(f"\tRecording: {recording}")
+        logging.info(f"\tRecording: {recording}")
 
         # preprocess
         recording_preproc = spre.highpass_filter(recording)
@@ -181,25 +155,15 @@ if __name__ == "__main__":
         max_depth_percentile = MAX_DEPTH_PERC
         min_depth, max_depth = None, None
         if CORRECT_MOTION:
-            print("\tEstimating motion")
+            logging.info("\tEstimating motion")
             motion_folder = flattened_folder / f"motion_{recording_name}"
             motion_figure_file = flattened_folder / f"fig-motion_{recording_name}.png"
-
-            probe_span = np.ptp(recording.get_channel_locations()[:, 1])
-
-            estimate_motion_kwargs = {}
-            win_step_um = WIN_STEP_NORM * probe_span
-            estimate_motion_kwargs["win_step_um"] = win_step_um
-            win_scale_um = WIN_SCALE_NORM * probe_span
-            estimate_motion_kwargs["win_scale_um"] = win_scale_um
-            print(f"\t\tEstimate motion kwargs: {estimate_motion_kwargs}")
 
             # use compute motion
             motion, motion_info = spre.compute_motion(
                 recording_preproc.astype(float),
                 preset="dredge_fast",
                 folder=motion_folder,
-                estimate_motion_kwargs=estimate_motion_kwargs,
                 output_motion_info=True,
                 raise_error=False
             )
@@ -217,21 +181,21 @@ if __name__ == "__main__":
                 if min_depth_percentile is not None and max_depth_percentile is not None:
                     peak_depths = motion_info["peak_locations"]["y"]
                     min_depth, max_depth = np.percentile(peak_depths, [min_depth_percentile, max_depth_percentile])
-                    print(f"\t\t\tDepth limits: {np.round(min_depth, 2)} - {np.round(max_depth, 2)} um")
+                    logging.info(f"\t\t\tDepth limits: {np.round(min_depth, 2)} - {np.round(max_depth, 2)} um")
 
 
-        print(f"\tGenerating hybrid recordings")
+        logging.info(f"\tGenerating hybrid recordings")
         min_amplitude = MIN_AMP
         max_amplitude = MAX_AMP
         for case in range(NUM_CASES):
-            print(f"\t\tGenerating case: {case}")
+            logging.info(f"\t\tGenerating case: {case}")
             case_name = f"{recording_name}_{case}"
 
             # sample templates
-            print(f"\t\t\tSelecting and fetching templates")
+            logging.info(f"\t\t\tSelecting and fetching templates")
 
             if select_by_depth:
-                print(f"\t\t\tSelecting templates using depth limits: {min_depth}-{max_depth}")
+                logging.info(f"\t\t\tSelecting templates using depth limits: {min_depth}-{max_depth}")
                 templates_info = templates_info.query(f"{min_depth} <= depth_along_probe <= {max_depth}")
 
             if relocate_templates:
@@ -244,7 +208,7 @@ if __name__ == "__main__":
                 # fetch templates
                 templates_selected = sgen.query_templates_from_database(templates_selected_info)
 
-                print(f"\t\t\tRelocating templates")
+                logging.info(f"\t\t\tRelocating templates")
 
                 source_probe = templates_selected.probe
                 dest_probe = recording.get_probe()
@@ -255,7 +219,7 @@ if __name__ == "__main__":
                 src_x = np.min(source_probe.contact_positions[:, 0])
                 dst_x = np.min(dest_probe.contact_positions[:, 0])
                 if np.abs(dst_x - src_x) > 100:
-                    print(f"\t\t\tShifting source probe by {dst_x - src_x} in x direction")
+                    logging.info(f"\t\t\tShifting source probe by {dst_x - src_x} in x direction")
                     source_probe.move([dst_x - src_x, 0])
 
                 sparsity = si.compute_sparsity(templates_selected, method="radius", radius_um=100)
@@ -263,7 +227,7 @@ if __name__ == "__main__":
                 channel_locations = recording.get_channel_locations()
                 min_depth = min_depth or np.min(channel_locations[:, 1])
                 max_depth = max_depth or np.max(channel_locations[:, 1])
-                print(f"\t\t\tRelocating templates using depth limits: {min_depth}-{max_depth}")
+                logging.info(f"\t\t\tRelocating templates using depth limits: {min_depth}-{max_depth}")
                 template_depths = templates_selected_info["depth_along_probe"].values
                 templates_array_moved = np.zeros(
                     (templates_selected.num_units, templates_selected.num_samples, dest_num_channels)
@@ -288,12 +252,12 @@ if __name__ == "__main__":
                         num_relocated_templates += 1
 
                 if num_relocated_templates < NUM_UNITS:
-                    print(f"\t\t\tCould not relocate all templates. Only added {num_relocated_templates}")
+                    logging.info(f"\t\t\tCould not relocate all templates. Only added {num_relocated_templates}")
                 templates_array_moved = templates_array_moved[:num_relocated_templates]
                 templates_selected_indices = templates_selected_indices[:num_relocated_templates]
                 unit_ids = templates_selected.unit_ids[:num_relocated_templates]
 
-                print(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
+                logging.info(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
                 templates_relocated = si.Templates(
                     templates_array=templates_array_moved,
                     nbefore=templates_selected.nbefore,
@@ -304,7 +268,7 @@ if __name__ == "__main__":
             else:
                 # select more UNITS, to account for bad interpolations
                 templates_selected_indices = np.random.choice(templates_info.index, size=NUM_UNITS, replace=False)
-                print(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
+                logging.info(f"\t\t\tSelected indices: {[int(t) for t in templates_selected_indices]}")
                 templates_selected_info = templates_info.loc[templates_selected_indices]
 
                 # fetch templates
@@ -312,7 +276,7 @@ if __name__ == "__main__":
                 templates_relocated = templates_selected
 
             # scale templates
-            print(f"\t\t\tScaling templates between {min_amplitude} and {max_amplitude}")
+            logging.info(f"\t\t\tScaling templates between {min_amplitude} and {max_amplitude}")
             templates_scaled = sgen.scale_template_to_range(
                 templates=templates_relocated,
                 min_amplitude=min_amplitude,
@@ -322,12 +286,12 @@ if __name__ == "__main__":
             extremum_channel_indices = list(si.get_template_extremum_channel(templates_scaled, outputs="index").values())
             for i in range(templates_scaled.num_units):
                 amplitudes[i] = np.ptp(templates_scaled.templates_array[i, :, extremum_channel_indices[i]])
-            print(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
+            logging.info(f"\t\t\tScaled amplitudes: {np.round(amplitudes, 2)}")
 
             if templates_scaled.probe.device_channel_indices is None:
                 templates_scaled.probe.set_device_channel_indices(np.arange(recording.get_num_channels()))
 
-            print(f"\t\t\tConstructing hybrid recording")
+            logging.info(f"\t\t\tConstructing hybrid recording")
             recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
                 recording=recording_preproc,
                 templates=templates_scaled,
@@ -335,12 +299,12 @@ if __name__ == "__main__":
                 motion=motion,
                 seed=None,
             )
-            print(f"\t\t\t{recording_hybrid}")
+            logging.info(f"\t\t\t{recording_hybrid}")
 
             # rename hybrid units with selected indices for provenance
             sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
-            print("\t\t\tComputing sorting analyzer")
+            logging.info("\t\t\tComputing sorting analyzer")
             analyzer_gt = si.create_sorting_analyzer(
                 sorting_hybrid,
                 recording_hybrid,
@@ -428,3 +392,12 @@ if __name__ == "__main__":
             )
             
             w.figure.savefig(flattened_folder / f"fig-templates_{case_name}.pdf")
+    logging.info("Pipeline stage completed", extra={"event_type": "stage_complete"})
+
+
+if __name__ == "__main__":
+    try:
+        run()
+    except Exception as e:
+        logging.exception("Pipeline stage failed", extra={"event_type": "stage_error"})
+        raise

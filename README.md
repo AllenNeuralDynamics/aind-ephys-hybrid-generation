@@ -15,24 +15,31 @@ The `data/` folder must include the session data and at least one JSON file gene
 
 ### Parameters
 
-The `code/run` script takes the following arguments:
+Parameters are read from the `hybrid_generation` section of `../params.json` (the capsule fails if the file is missing):
 
+| Key | Default | Description |
+|-----|---------|-------------|
+| `min_amp` | `50` | Minimum amplitude to scale injected templates |
+| `max_amp` | `200` | Maximum amplitude to scale injected templates |
+| `min_depth_percentile` | `5` | Percentile of depths used as minimum depth |
+| `max_depth_percentile` | `95` | Percentile of depths used as maximum depth |
+| `num_units` | `10` | Number of hybrid units for each case |
+| `num_cases` | `5` | Number of cases for each recording |
+| `correct_motion` | `true` | Whether to estimate motion (`dredge_fast` preset with default parameters) |
 
-```bash
-  --min-amp MIN_AMP     Minimum amplitude to scale injected templates
-  --max-amp MAX_AMP     Maximum amplitude to scale injected templates
-  --min-depth-percentile MIN_DEPTH_PERCENTILE
-                        Percentile of depths used as minimum depth
-  --max-depth-percentile MAX_DEPTH_PERCENTILE
-                        Percentile of depths used as maximum depth
-  --num-units NUM_UNITS
-                        Number of hybrid units for each case
-  --num-cases NUM_CASES
-                        Number of cases for each recording
-  --skip-correct-motion
-                        Whether to skip motion correction.
+Minimal example `params.json`:
 
+```json
+{
+    "hybrid_generation": {
+        "num_units": 10,
+        "num_cases": 5,
+        "correct_motion": true
+    }
+}
 ```
+
+The number of jobs can be set with the `CO_CPUS` or `N_JOBS_EXT` environment variables (default: all cores).
 
 ### Output
 

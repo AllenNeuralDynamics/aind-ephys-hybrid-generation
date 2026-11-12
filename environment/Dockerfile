@@ -7,6 +7,7 @@ ARG GIT_ASKPASS
 COPY git-askpass /
 
 RUN pip install -U --no-cache-dir \
+    log-schema==0.2.10.dev1 \
     s3fs==2024.6.1 \
     spikeinterface[full,widgets]==0.103.0 \
     torch==2.6.0 \
