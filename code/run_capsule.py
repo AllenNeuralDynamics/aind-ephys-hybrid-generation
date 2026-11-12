@@ -11,6 +11,7 @@ os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import warnings
 import json
 import pickle
+import shutil
 import numpy as np
 from pathlib import Path
 
@@ -24,6 +25,7 @@ import spikeinterface.widgets as sw
 
 data_folder = Path("../data")
 results_folder = Path("../results")
+scratch_folder = Path("../scratch")
 PARAMS_FILE = Path("../params.json")
 
 margin_from_border = 100
@@ -222,7 +224,7 @@ def run() -> None:
                     logging.info(f"\t\t\tShifting source probe by {dst_x - src_x} in x direction")
                     source_probe.move([dst_x - src_x, 0])
 
-                sparsity = si.compute_sparsity(templates_selected, method="radius", radius_um=100)
+                sparsity = si.compute_sparsity(templates_selected, method="radius", radius_um=100, peak_sign="neg", amplitude_mode="extremum")
 
                 channel_locations = recording.get_channel_locations()
                 min_depth = min_depth or np.min(channel_locations[:, 1])
@@ -291,18 +293,32 @@ def run() -> None:
             if templates_scaled.probe.device_channel_indices is None:
                 templates_scaled.probe.set_device_channel_indices(np.arange(recording.get_num_channels()))
 
+            # GT spike trains (same defaults as generate_hybrid_recording), with units named after the
+            # selected template indices for provenance. In-memory sortings are not pickle-serializable
+            # (spikeinterface >= 0.105), so the GT is saved to scratch/gt_<case> and the hybrid recording refers
+            # to it as ../scratch/gt_<case> (relative to the data folder): gt_<case> is shipped next to
+            # job_<case>.pkl and downstream steps must place it in their scratch folder
+            sorting_gt = sgen.generate_sorting(
+                num_units=templates_scaled.num_units,
+                durations=[recording_preproc.get_duration(segment_index=s) for s in range(recording_preproc.get_num_segments())],
+                sampling_frequency=recording_preproc.sampling_frequency,
+                firing_rates=15,
+                refractory_period_ms=4.0,
+                seed=None,
+            ).rename_units(templates_selected_indices)
+            gt_folder = scratch_folder / f"gt_{case_name}"
+            sorting_gt = sorting_gt.save(folder=gt_folder, format="numpy_folder")
+
             logging.info(f"\t\t\tConstructing hybrid recording")
             recording_hybrid, sorting_hybrid = sgen.generate_hybrid_recording(
                 recording=recording_preproc,
+                sorting=sorting_gt,
                 templates=templates_scaled,
                 are_templates_scaled=True,
                 motion=motion,
                 seed=None,
             )
             logging.info(f"\t\t\t{recording_hybrid}")
-
-            # rename hybrid units with selected indices for provenance
-            sorting_hybrid = sorting_hybrid.rename_units(templates_selected_indices)
 
             logging.info("\t\t\tComputing sorting analyzer")
             analyzer_gt = si.create_sorting_analyzer(
@@ -335,7 +351,8 @@ def run() -> None:
             flattened_file_path = flattened_folder / f"job_{case_name}.pkl"
             flattened_file_path.write_bytes(pickle.dumps(dump_dict))
 
-            sorting_hybrid.dump_to_pickle(flattened_folder / f"gt_{case_name}.pkl")
+            shutil.copytree(gt_folder, recordings_folder / gt_folder.name)
+            shutil.copytree(gt_folder, flattened_folder / gt_folder.name)
 
             # generate some plots!
             if CORRECT_MOTION:
@@ -381,7 +398,7 @@ def run() -> None:
                 sampling_frequency=templates_selected.sampling_frequency,
                 nbefore=templates_selected.nbefore
             )
-            sparsity = si.compute_sparsity(templates_obj)
+            sparsity = si.compute_sparsity(templates_obj, peak_sign="neg", amplitude_mode="extremum")
 
             figsize = (7, 3*NUM_UNITS)
             w = sw.plot_unit_templates(
