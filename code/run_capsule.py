@@ -103,7 +103,9 @@ def run() -> None:
     # Use CO_CPUS/N_JOBS_EXT env variable if available
     N_JOBS_EXT = os.getenv("CO_CPUS") or os.getenv("N_JOBS_EXT")
     N_JOBS = int(N_JOBS_EXT) if N_JOBS_EXT is not None else -1
-    si.set_global_job_kwargs(n_jobs=N_JOBS, progress_bar=False)
+    # global_job_kwargs as in the ephys steps (mp_context forkserver: streamed recordings hold S3 clients that can't be forked)
+    job_kwargs = {**full_params.get("global_job_kwargs", {}), "n_jobs": N_JOBS}
+    si.set_global_job_kwargs(**job_kwargs)
 
     templates_info = sgen.fetch_templates_database_info()
 
