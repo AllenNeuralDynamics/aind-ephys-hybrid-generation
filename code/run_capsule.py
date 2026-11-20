@@ -340,6 +340,22 @@ def run() -> None:
                 relative_to=data_folder,
                 recursive=True,
             )
+            if not recording_dict.get("relative_paths", False):
+                # a streamed (s3://) recording can't be made relative, so SpikeInterface keeps every path absolute,
+                # including the GT sorting in this task's scratch: point it at ../scratch instead, which resolves
+                # from the steps' working dir (code/) to the scratch folder where the next steps stage it
+                from spikeinterface.core.core_tools import recursive_path_modifier
+
+                scratch_prefixes = sorted({str(scratch_folder.absolute()), str(scratch_folder.resolve())}, key=len, reverse=True)
+
+                def to_relative_scratch(path):
+                    path = str(path)
+                    for prefix in scratch_prefixes:
+                        if path.startswith(prefix):
+                            return str(scratch_folder) + path[len(prefix):]
+                    return path
+
+                recording_dict = recursive_path_modifier(recording_dict, to_relative_scratch)
             dump_dict = {
                 "session_name": job_dict["session_name"],
                 "recording_name": case_name,
